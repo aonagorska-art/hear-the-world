@@ -122,19 +122,93 @@ function SurprisePanel({song,onClose,onAgain,onOpen}:{song:RankedSong;onClose:()
 
 function SongContinuum({song,navigate,track}:{song:RankedSong;navigate:(path:string)=>void;track:(event:string)=>void}){
   const [answer,setAnswer]=useState('')
-  const nearby=rollingStone500.filter(item=>item.rank!==song.rank).sort((a,b)=>Math.abs((a.year||0)-(song.year||0))-Math.abs((b.year||0)-(song.year||0)))[0]
-  const contrast=rollingStone500.filter(item=>item.rank!==song.rank).sort((a,b)=>Math.abs((b.year||0)-(song.year||0))-Math.abs((a.year||0)-(song.year||0)))[0]
-  const surprise=rollingStone500[(song.rank*37)%rollingStone500.length]
-  const next=[['FOLLOW THE MOMENT',nearby],['CHANGE THE ERA',contrast],['TAKE THE UNEXPECTED TURN',surprise]] as const
+  const songYear=song.year||0
+  const researched=rollingStone500.filter(item=>item.rank!==song.rank&&Boolean(richFor(item)))
+  const currentStory=richFor(song)
+  const themeScore=(item:RankedSong)=>{
+    const story=richFor(item)
+    return story&&currentStory?story.themes.filter(theme=>currentStory.themes.includes(theme)).length:0
+  }
+  const unique=(items:RankedSong[])=>items.filter((item,index,list)=>list.findIndex(candidate=>candidate.rank===item.rank)===index)
+  const rotate=(items:RankedSong[],offset:number)=>items.length?[...items.slice(offset%items.length),...items.slice(0,offset%items.length)]:[]
+  const thematic=unique([...researched].sort((a,b)=>themeScore(b)-themeScore(a)||Math.abs((a.year||0)-songYear)-Math.abs((b.year||0)-songYear)))
+  const sameMoment=unique([...researched].sort((a,b)=>Math.abs((a.year||0)-songYear)-Math.abs((b.year||0)-songYear)))
+  const sameArtist=rollingStone500.filter(item=>item.rank!==song.rank&&normalize(item.artist)===normalize(song.artist))
+  const farAway=unique([...researched].sort((a,b)=>Math.abs((b.year||0)-songYear)-Math.abs((a.year||0)-songYear)))
+  const fallback=rotate(researched,song.rank%Math.max(researched.length,1))
+  const hasSameArtist=sameArtist.length>0
+  const meaningSongs=unique([...thematic,...fallback]).slice(0,3)
+  const meaningRanks=new Set(meaningSongs.map(item=>item.rank))
+  const momentSongs=unique([...sameMoment,...fallback]).filter(item=>!meaningRanks.has(item.rank)).slice(0,3)
+  const usedRanks=new Set([...meaningSongs,...momentSongs].map(item=>item.rank))
+  const resetSongs=unique([...sameArtist,...farAway,...fallback]).filter(item=>!usedRanks.has(item.rank)).slice(0,3)
+  const paths:Record<string,Array<{label:string;song:RankedSong;reason:string}>>={
+    'Yes — completely':meaningSongs.map((item,index)=>({label:['FOLLOW THE MEANING','FOLLOW THE STRUGGLE','FOLLOW THE AFTERLIFE'][index],song:item,reason:['A related question, asked from another life.','The same pressure finds a different voice.','Hear what another generation carried forward.'][index]})),
+    'A little':momentSongs.map((item,index)=>({label:['STAY IN THE MOMENT','KEEP THE CONVERSATION','HEAR A COUNTERPOINT'][index],song:item,reason:[`Another record made close to ${song.year}.`,'A neighboring story with a different center.','Compare what changes when the voice changes.'][index]})),
+    'I need another listen':resetSongs.map((item,index)=>({label:[hasSameArtist?'STAY WITH THE ARTIST':'CHANGE THE VOICE','TRY A CLEARER DOORWAY','TAKE A DETOUR'][index],song:item,reason:[hasSameArtist?'Keep the voice, change the record.':'Let a different voice reset your ears.','A new song may reveal what this one withheld.','Return later after a radical change of perspective.'][index]}))
+  }
+  const next=paths[answer]||[]
   const choose=(value:string)=>{setAnswer(value);track(`question_${value.toLowerCase().replace(/\s/g,'_')}`)}
-  return <section className="song-continuum"><div className="reflection"><span>ONE QUESTION BEFORE YOU LEAVE</span><h2>Did this song change when you learned where it came from?</h2><div>{['Yes — completely','A little','I need another listen'].map(value=><button className={answer===value?'active':''} onClick={()=>choose(value)} key={value}>{value}</button>)}</div>{answer&&<p>{answer==='I need another listen'?'Good. Some records reveal themselves slowly.':'Carry that shift into the next song.'}</p>}</div><div className="next-discovery"><span>WHERE TO NEXT?</span><div>{next.map(([label,item])=><button key={label} onClick={()=>navigate(`/song/${item.rank}`)}><small>{label}</small><strong>{item.title}</strong><em>{item.artist} · {item.year}</em><i>→</i></button>)}</div></div></section>
+  return <section className="song-continuum"><div className="reflection"><span>ONE QUESTION BEFORE YOU LEAVE</span><h2>Did this song change when you learned where it came from?</h2><div>{['Yes — completely','A little','I need another listen'].map(value=><button className={answer===value?'active':''} onClick={()=>choose(value)} key={value}>{value}</button>)}</div>{answer&&<p>{answer==='I need another listen'?'Good. Take a different route, then come back with new ears.':answer==='A little'?'Stay close to the moment and compare what shifts.':'Carry that change into a deeper connection.'}</p>}</div><div className={`next-discovery ${answer?'is-open':''}`}><span>{answer?'YOUR ANSWER OPENED THIS PATH':'CHOOSE AN ANSWER TO OPEN A PATH'}</span>{answer&&<div>{next.map(path=><button key={`${answer}-${path.song.rank}`} onClick={()=>navigate(`/song/${path.song.rank}`)}><small>{path.label}</small><strong>{path.song.title}</strong><em>{path.song.artist} · {path.song.year}</em><p>{path.reason}</p><i>→</i></button>)}</div>}</div></section>
 }
 
 function RankedSongPage({song,navigate,saved,onSave,track}:{song:RankedSong;navigate:(path:string)=>void;saved:string[];onSave:(rank:number)=>void;track:(event:string)=>void}){
+  useEffect(()=>{document.title=`${song.title} — Hear the World`;return()=>{document.title='Hear the World'}},[song.title])
   if(song.rank===2) return <FightThePowerExperience song={song} navigate={navigate} saved={saved} onSave={onSave} track={track}/>
   const rich=richFor(song)
-  useEffect(()=>{document.title=`${song.title} — Hear the World`;return()=>{document.title='Hear the World'}},[song])
-  return <article className="song-page"><button className="back" onClick={()=>navigate('/')}>← Back to all 500</button><header className="song-lead"><div className="lead-cover"><CoverImage song={song}/><span>ROLLING STONE · #{song.rank}</span></div><div><p className="eyebrow">{song.year} · NUMBER {song.rank} OF 500</p><h1>{song.title}</h1><h2>{song.artist}</h2><p className="lead-copy">{rich?.summary||songHook(song)}</p><div className="lead-actions"><a href={spotifySearch(song)} target="_blank" rel="noreferrer">▶ Listen</a><a href={youtubeSearch(song)} target="_blank" rel="noreferrer">Watch ↗</a><SaveButton active={saved.includes(String(song.rank))} onClick={()=>onSave(song.rank)} label="Save"/></div></div></header><section className="listen-first"><div><span>LISTEN FIRST</span><h3>Before the explanation,<br/>hear the record.</h3></div><AudioPreview artist={song.artist} title={song.title} onPlay={()=>track('audio_preview_started')}/></section>{rich?<DeepDive song={rich} track={track}/>:<section className="open-questions"><article><span>01 · FIRST LISTEN</span><h3>What catches your ear?</h3><p>Notice the voice, rhythm, texture and the moment the song announces what kind of world it wants to create.</p></article><article><span>02 · THE RANKING</span><h3>Does #{song.rank} change how you hear it?</h3><p>Lists create canons, but listening can resist them. Decide what the song means before accepting its assigned place.</p></article><article><span>03 · FOLLOW THE SOURCE</span><h3>Continue the investigation.</h3><p>This listening page intentionally avoids invented interpretation. Read the original ranking note, then return to the recording.</p><a href={song.sourceUrl} target="_blank" rel="noreferrer">Rolling Stone entry ↗</a></article></section>}<SongContinuum song={song} navigate={navigate} track={track}/></article>
+  return <article className="song-page"><button className="back" onClick={()=>navigate('/')}>← Back to all 500</button><header className="song-lead"><div className="lead-cover"><CoverImage song={song}/><span>ROLLING STONE · #{song.rank}</span></div><div><p className="eyebrow">{song.year} · NUMBER {song.rank} OF 500</p><h1>{song.title}</h1><h2>{song.artist}</h2><div className="mobile-listen"><span>LISTEN FIRST</span><AudioPreview artist={song.artist} title={song.title} onPlay={()=>track('audio_preview_started')}/></div><p className="lead-copy">{rich?.summary||songHook(song)}</p><div className="lead-actions"><a href={spotifySearch(song)} target="_blank" rel="noreferrer">▶ Listen in full</a><a href={youtubeSearch(song)} target="_blank" rel="noreferrer">Watch ↗</a><SaveButton active={saved.includes(String(song.rank))} onClick={()=>onSave(song.rank)} label="Save"/></div></div></header><section className="listen-first"><div><span>LISTEN FIRST</span><h3>Before the explanation,<br/>hear the record.</h3></div><AudioPreview artist={song.artist} title={song.title} onPlay={()=>track('audio_preview_started')}/></section>{rich?<><DeepDive song={rich} track={track}/><CulturalAfterlife song={rich} onExplore={stage=>track(`afterlife_${stage}`)}/></>:<section className="open-questions"><article><span>01 · FIRST LISTEN</span><h3>What catches your ear?</h3><p>Notice the voice, rhythm, texture and the moment the song announces what kind of world it wants to create.</p></article><article><span>02 · THE RANKING</span><h3>Does #{song.rank} change how you hear it?</h3><p>Lists create canons, but listening can resist them. Decide what the song means before accepting its assigned place.</p></article><article><span>03 · FOLLOW THE SOURCE</span><h3>Continue the investigation.</h3><p>This listening page intentionally avoids invented interpretation. Read the original ranking note, then return to the recording.</p><a href={song.sourceUrl} target="_blank" rel="noreferrer">Rolling Stone entry ↗</a></article></section>}<SongContinuum song={song} navigate={navigate} track={track}/></article>
+}
+
+type AfterlifeMoment={era:string;kind:string;title:string;copy:string;prompt:string;image?:string;imageAlt?:string;credit?:string}
+
+function afterlifeMoments(song:CatalogSong):AfterlifeMoment[]{
+  const special:Record<string,AfterlifeMoment[]>={
+    'fightthepower':[
+      {era:'1989',kind:'COMMISSION',title:'A director asks for an anthem.',copy:'Spike Lee commissions a song for Do the Right Thing. Public Enemy answer with a record built to work inside the film—and escape it.',prompt:'The song begins as cinema, but refuses to stay there.',image:fightVisuals.poster,imageAlt:'Original Do the Right Thing film poster',credit:'ART SIMS · DO THE RIGHT THING, 1989'},
+      {era:'1989',kind:'RALLY',title:'Bed-Stuy completes the song.',copy:'The music video turns a neighborhood performance into a political march. The crowd is not decoration; it becomes another voice.',prompt:'A performance becomes a public gathering.',image:fightVisuals.hero,imageAlt:'Spike Lee with Public Enemy in 1989',credit:'SPIKE LEE + PUBLIC ENEMY · 1989'},
+      {era:'2020',kind:'RETURN',title:'The refrain returns to the street.',copy:'During the racial-justice protests of 2020, the song circulates again as usable public language—not sealed 1980s history.',prompt:'A classic becomes present tense again.',image:fightVisuals.live,imageAlt:'Public Enemy performing live',credit:'PUBLIC ENEMY LIVE · THE SONG KEEPS MOVING'},
+      {era:'NOW',kind:'LIVING QUESTION',title:'Who gets to control public memory?',copy:'Its central conflict survives each replay: who becomes a hero, whose anger is treated as legitimate, and whose history enters the canon.',prompt:'The afterlife is not nostalgia. It is an unresolved argument.'}
+    ],
+    'bornintheusa':[
+      {era:'1984',kind:'ORIGIN · RELEASE',title:'A damaged veteran enters an arena.',copy:'Bleak verses about work, war and abandonment arrive inside an enormous, triumphant production.',prompt:'Hear the friction between the story and the sound.'},
+      {era:'1984',kind:'MISREADING',title:'The chorus escapes the verses.',copy:'Political campaigns and mass audiences repeatedly hear celebration where the narrator describes promises that failed him.',prompt:'The misunderstanding becomes part of the work.'},
+      {era:'AFTER',kind:'REINTERPRETATION',title:'The arrangement changes the argument.',copy:'Stripped-back performances make the veteran’s isolation harder to miss and reveal how production can redirect meaning.',prompt:'The same words can carry a different country.'},
+      {era:'NOW',kind:'LIVING QUESTION',title:'What does patriotism require us to hear?',copy:'The song remains a test of selective listening: national pride in the refrain, national responsibility in the verses.',prompt:'Meaning lives in the gap between them.'}
+    ],
+    'strangefruit':[
+      {era:'1939',kind:'ORIGIN · WITNESS',title:'A nightclub is asked to stop and look.',copy:'Billie Holiday’s performance turns Abel Meeropol’s text into a ritual of attention, with silence and staging refusing the role of background entertainment.',prompt:'The room becomes part of the testimony.'},
+      {era:'1939',kind:'INDUSTRY',title:'A recording the mainstream resists.',copy:'Its subject and force make it difficult for the commercial music system to absorb, revealing the limits around what could be publicly named.',prompt:'Circulation becomes a political question.'},
+      {era:'AFTER',kind:'LINEAGE',title:'Other voices inherit the witness.',copy:'Later performances do not neutralize the song; each new voice must decide how to carry an image tied to specific racial terror.',prompt:'A cover can become an act of responsibility.'},
+      {era:'NOW',kind:'LIVING QUESTION',title:'Can a document of violence ever become historical?',copy:'The song survives because it does not allow racial terror to feel comfortably distant or safely resolved.',prompt:'Its afterlife is the refusal to look away.'}
+    ]
+  }
+  return special[normalize(song.title)]||[
+    {era:String(song.year),kind:'ORIGIN · RELEASE',title:'The record enters its first world.',copy:song.historicalContext,prompt:'Start with what the first listeners already knew.'},
+    {era:'THEN',kind:'FIRST RECEPTION',title:`What audiences heard in ${song.year}.`,copy:song.then,prompt:'Notice which references were immediate — and which needed time.'},
+    {era:'AFTER',kind:'CULTURAL LIFE',title:'The song becomes more than its release.',copy:song.impact,prompt:'A recording changes when people reuse, remember and argue with it.'},
+    {era:'NOW',kind:'LIVING MEANING',title:'The present listens back.',copy:song.now,prompt:'What survives is not always what the artist could have predicted.'}
+  ]
+}
+
+function CulturalAfterlife({song,dark=false,onExplore,onReplay,playing=false}:{song:CatalogSong;dark?:boolean;onExplore?:(stage:string)=>void;onReplay?:()=>void;playing?:boolean}){
+  const moments=afterlifeMoments(song)
+  const [active,setActive]=useState(0)
+  useEffect(()=>setActive(0),[song.id])
+  const select=(index:number)=>{setActive(index);onExplore?.(moments[index].kind.toLowerCase().replace(/[^a-z]+/g,'_'))}
+  const moment=moments[active]
+  return <section className={`cultural-afterlife ${dark?'afterlife-dark':''}`} id={dark?'ftp-afterlife':undefined}>
+    <div className="afterlife-heading"><div><span>CULTURAL AFTERLIFE</span><h2>{dark?`The song did not stay in ${song.year}.`:'Four moments changed what the song meant.'}</h2></div><p>Move through the moments that changed how <em>{song.title}</em> was heard.</p></div>
+    <div className="afterlife-stage">
+      <div className="afterlife-map" role="tablist" aria-label={`The cultural afterlife of ${song.title}`}>
+        <div className="afterlife-line" aria-hidden="true"><i style={{width:`${active/(moments.length-1)*100}%`}}/></div>
+        {moments.map((item,index)=><button key={`${item.era}-${item.kind}`} role="tab" aria-selected={active===index} className={active===index?'active':''} onClick={()=>select(index)}><i/><span>{item.era}</span><small>{item.kind}</small></button>)}
+      </div>
+      <article className="afterlife-card" aria-live="polite">
+        <figure className="afterlife-visual">{moment.image?<img src={moment.image} alt={moment.imageAlt||''}/>:<AlbumCover artist={song.artist} title={song.title}/>}<figcaption>{moment.credit||`${song.title} · ${song.artist}`}</figcaption>{onReplay&&<button onClick={onReplay}>{playing?'Ⅱ PAUSE':'▶ LISTEN AGAIN'}</button>}</figure>
+        <div className="afterlife-story"><div className="afterlife-index"><span>0{active+1}</span><i>/</i><small>0{moments.length}</small></div><span>{moment.era} · {moment.kind}</span><h3>{moment.title}</h3><p>{moment.copy}</p><blockquote>{moment.prompt}</blockquote><button onClick={()=>select((active+1)%moments.length)}>{active===moments.length-1?'BEGIN AGAIN ↺':'NEXT MOMENT →'}</button></div>
+      </article>
+    </div>
+  </section>
 }
 
 const fightFrames=[
@@ -152,13 +226,13 @@ const fightVisuals={
 }
 
 function FightThePowerExperience({song,navigate,saved,onSave,track}:{song:RankedSong;navigate:(path:string)=>void;saved:string[];onSave:(rank:number)=>void;track:(event:string)=>void}){
+  const rich=richFor(song)
   const audioRef=useRef<HTMLAudioElement>(null)
   const [preview,setPreview]=useState('')
   const [current,setCurrent]=useState(0)
   const [duration,setDuration]=useState(30)
   const [playing,setPlaying]=useState(false)
   const [revealed,setRevealed]=useState<number[]>([])
-  const [timeLens,setTimeLens]=useState(0)
   const [reflection,setReflection]=useState('')
   const activeFrame=fightFrames.reduce((active,frame,index)=>current>=frame.time?index:active,0)
   useEffect(()=>{
@@ -191,7 +265,8 @@ function FightThePowerExperience({song,navigate,saved,onSave,track}:{song:Ranked
       <audio ref={audioRef} src={preview||undefined} onLoadedMetadata={event=>setDuration(event.currentTarget.duration||30)} onTimeUpdate={event=>setCurrent(event.currentTarget.currentTime)} onPlay={()=>setPlaying(true)} onPause={()=>setPlaying(false)} onEnded={()=>{setPlaying(false);track('immersive_preview_completed')}}/>
     </section>
 
-    <nav className="ftp-story-nav" aria-label="Song story chapters">{[['01','LISTEN','ftp-story'],['02','DECODE','ftp-hidden'],['03','CONTEXT','ftp-context'],['04','THEN / NOW','ftp-then-now'],['05','CONTINUE','ftp-next']].map(([number,label,id])=><button key={id} onClick={()=>document.getElementById(id)?.scrollIntoView({behavior:'smooth'})}><span>{number}</span>{label}</button>)}</nav>
+    <nav className="ftp-story-nav" aria-label="Song story chapters">{[['01','LISTEN','ftp-story'],['02','DECODE','ftp-hidden'],['03','TIMELINE','ftp-afterlife'],['04','CONTINUE','ftp-next']].map(([number,label,id])=><button key={id} onClick={()=>document.getElementById(id)?.scrollIntoView({behavior:'smooth'})}><span>{number}</span>{label}</button>)}</nav>
+    {preview&&<div className="ftp-mini-player"><button onClick={togglePlayback} aria-label={playing?'Pause preview':'Play preview'}>{playing?'Ⅱ':'▶'}</button><div><span>FIGHT THE POWER · PUBLIC ENEMY</span><i><b style={{width:`${progress}%`}}/></i></div><time>{Math.floor(current).toString().padStart(2,'0')} / {Math.round(duration||30).toString().padStart(2,'0')}</time></div>}
 
     <section className="ftp-listening" id="ftp-story">
       <header><p>LISTENING MAP</p><h2>Thirty seconds.<br/>Five ways into the record.</h2></header>
@@ -213,21 +288,7 @@ function FightThePowerExperience({song,navigate,saved,onSave,track}:{song:Ranked
       ['THE REAL TARGET','The deeper conflict is control over public memory: who becomes a hero, whose anger sounds legitimate, and whose experience enters the canon.']
     ].map(([label,copy],index)=>{const open=revealed.includes(index);return <button className={open?'revealed':''} onClick={()=>setRevealed(items=>items.includes(index)?items.filter(item=>item!==index):[...items,index])} aria-expanded={open} key={label}><span>0{index+1} · {label}</span><strong>{open?copy:'Reveal the signal'}</strong><i>{open?'×':'+'}</i></button>})}</div><p className="signal-progress">{revealed.length} OF 3 SIGNALS FOUND</p></section>
 
-    <section className="ftp-archive" id="ftp-context">
-      <div className="ftp-section-title light"><p>THE WORLD AROUND THE RECORD</p><h2>New York was already turned up.</h2></div>
-      <div className="ftp-archive-grid"><figure className="ftp-archive-image"><img src={fightVisuals.poster} alt="Original 1989 Do the Right Thing film poster"/><div className="ftp-poster-note"><span>THE FILM THAT NEEDED AN ANTHEM</span><p>Public Enemy formed on Long Island. Spike Lee carried their voice into Bedford-Stuyvesant, where the song became part of the street, the story, and the argument.</p></div><figcaption><a href="https://www.si.edu/object/do-right-thing:chndm_1996-92-2" target="_blank" rel="noreferrer">POSTER: ART SIMS, 1989 · COOPER HEWITT / SMITHSONIAN ↗</a></figcaption></figure><div className="ftp-headlines"><article><time>EARLY 1989</time><h3>SPIKE LEE ASKS FOR AN ANTHEM, NOT A THEME SONG</h3><p>The commission for <em>Do the Right Thing</em> gives Public Enemy a cinematic stage for a record built to confront.</p></article><article><time>SPRING 1989</time><h3>A MUSIC VIDEO BECOMES A POLITICAL RALLY</h3><p>Bed-Stuy is not treated as scenery. The neighborhood and its crowd become part of the performance.</p></article><article><time>SUMMER 1989</time><h3>THE SONG LEAVES THE SOUNDTRACK AND ENTERS PUBLIC LIFE</h3><p>Arguments over race, policing, cultural heroes, and representation follow the record beyond the film.</p></article></div></div>
-    </section>
-
-    <section className="ftp-meaning" id="ftp-then-now">
-      <div className="ftp-section-title"><p>LYRIC LENS</p><h2>The words challenge the frame.</h2><p>The central question is not simply who holds power. It is who gets to define history, decide which voices sound respectable, and choose the people a culture is expected to honor.</p></div>
-      <div className="time-lens"><div className="time-lens-head"><span className={timeLens<50?'active':''}>1989</span><p>DRAG THROUGH THE MEANING</p><span className={timeLens>=50?'active':''}>NOW</span></div><input aria-label="Compare the meaning in 1989 with its meaning now" type="range" min="0" max="100" value={timeLens} onChange={event=>setTimeLens(Number(event.target.value))}/><article><span>{timeLens<50?'WHAT AUDIENCES HEARD THEN':'WHAT WE HEAR NOW'}</span><h3>{timeLens<50?'A soundtrack for refusing cultural deference.':'A warning about who controls public memory.'}</h3><p>{timeLens<50?'In 1989, the record arrived inside debates about race, urban policing, media representation, and whether anger in art exposed conflict or encouraged it.':'Its questions remain active wherever protest, monuments, policing, and representation become battles over whose experience counts.'}</p></article></div>
-    </section>
-
-    <section className="ftp-listen-again"><div><span>LISTEN AGAIN</span><h2>The same thirty seconds.<br/>A different record.</h2><p>This time, listen for the archive behind the beat, the crowd inside the chorus, and the argument hidden inside the energy.</p></div><button onClick={()=>{seek(0);togglePlayback()}} disabled={!preview}><i>{playing?'Ⅱ':'▶'}</i><span>{playing?'PAUSE':'PLAY WITH NEW EARS'}</span></button></section>
-
-    <section className="ftp-connections"><div className="ftp-connections-photo"><img src={fightVisuals.live} alt="Chuck D and Flavor Flav performing with Public Enemy in 2014"/></div><div className="ftp-section-title light"><p>THE RECORD KEEPS MOVING</p><h2>Follow the signal.</h2></div><div className="ftp-connection-row">{[
-      ['FILM','Do the Right Thing','The song operates as Radio Raheem’s pulse and the film’s recurring argument.'],['PRODUCTION','The Bomb Squad','Dense sampling turns the studio into a place where competing histories can speak at once.'],['LINEAGE','James Brown and Black musical memory','Funk breaks and vocal fragments connect a new political record to older declarations of identity.'],['AFTERLIFE','Protest culture after 1989','The track continues to return when racial injustice and police power dominate public debate.']
-    ].map(([type,title,copy],index)=><article key={title}><span>0{index+1} · {type}</span><h3>{title}</h3><p>{copy}</p></article>)}</div><a className="ftp-live-credit" href="https://commons.wikimedia.org/wiki/File:Chuck_D_and_Flavor_Flav_of_Public_Enemy.jpg" target="_blank" rel="noreferrer">PUBLIC ENEMY LIVE, 2014 · KOWARSKI / CC BY 2.0 ↗</a></section>
+    {rich&&<CulturalAfterlife song={rich} dark playing={playing} onReplay={()=>{seek(0);togglePlayback()}} onExplore={stage=>track(`fight_afterlife_${stage}`)}/>}
 
     <section className="ftp-exit" id="ftp-next"><p>THE RECORD ENDS. THE QUESTION DOESN’T.</p><h2>Can a protest song remain radical after it becomes a classic?</h2><div className="ftp-answer-row">{['Yes — the need remains','Only if we keep listening','The canon changes it'].map(answer=><button className={reflection===answer?'selected':''} onClick={()=>{setReflection(answer);track(`fight_reflection_${answer.slice(0,3).toLowerCase()}`)}} key={answer}>{answer}</button>)}</div>{reflection&&<p className="ftp-answer-note">Your answer opens three different ways forward.</p>}<div className="ftp-paths">{[
       ['FOLLOW THE PROTEST','Alright','The crowd answers a generation later.'],['FOLLOW THE LINEAGE','Say It Loud (I’m Black and I’m Proud)','Trace the declaration inside the sample memory.'],['FOLLOW THE QUESTION','A Change Is Gonna Come','Move from confrontation toward hard-won hope.']

@@ -8,7 +8,9 @@ export function AlbumCover({artist,title,className='',fallbackUrl}:{artist:strin
   const key=`${artist} ${title}`
   const [artwork,setArtwork]=useState(artworkCache.get(key)||'')
   useEffect(()=>{
-    if(artworkCache.has(key)) return
+    const cached=artworkCache.get(key)
+    setArtwork(cached||'')
+    if(cached) return
     let active=true
     fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(key)}&entity=song&limit=1`)
       .then(response=>response.ok?response.json():Promise.reject())
@@ -34,6 +36,9 @@ export function AudioPreview({artist,title,onPlay}:{artist:string;title:string;o
   const [preview,setPreview]=useState(previewCache.get(key)||'')
   const [checked,setChecked]=useState(previewCache.has(key))
   useEffect(()=>{
+    const cached=previewCache.get(key)
+    setPreview(cached||'')
+    setChecked(previewCache.has(key))
     if(previewCache.has(key)) return
     let active=true
     fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(key)}&entity=song&limit=1`)
